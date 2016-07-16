@@ -93,7 +93,7 @@ Session.prototype._parse_message = function(msg) {
     var id = msg[1];
     var handler = this._pending_requests[id];
     delete this._pending_requests[id];
-    handler(msg[2], msg[3]);
+    handler && handler(msg[2], msg[3]);
   } else if (msg_type === 2) {
     // notification/event
     //   - msg[1]: event name

@@ -1,107 +1,102 @@
-var util = require('util');
-var EventEmitter = require('events').EventEmitter;
-
-var msgpack5 = require('msgpack5');
-
-
-function Response(encoder, request_id) {
-  this._encoder = encoder;
-  this._request_id = request_id;
-}
-
-
-Response.prototype.send = function(resp, is_error) {
-  if (this._sent) {
-    throw new Error('Response to id ' + this._request_id + ' already sent');
-  }
-  if (is_error) {
-    this._encoder.write([1, this._request_id, resp, null]);
-  } else {
-    this._encoder.write([1, this._request_id, null, resp]);
-  }
-  this._sent = true;
+"use strict";
+var __extends = (this && this.__extends) || function (d, b) {
+    for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p];
+    function __() { this.constructor = d; }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
 };
-
-
-function Session(types) {
-  var _this = this;
-  var msgpack = msgpack5();
-  var opts = {header: false};
-
-  if (types)
-    for (var i = 0, l = types.length; i < l; i++) {
-      var type = types[i];
-      msgpack.register(type.code, type.constructor, type.encode, type.decode);
+var msgpack5 = require("msgpack5");
+var events_1 = require("events");
+var Response = (function () {
+    function Response(encoder, request_id) {
+        this._sent = false;
+        this._encoder = encoder;
+        this._request_id = request_id;
     }
-
-  this._pending_requests = {};
-  this._next_request_id = 1;
-  this._encoder = msgpack.encoder(opts);
-  this._decoder = msgpack.decoder(opts);
-  this._decoder.on('data', function(msg) {
-    _this._parse_message(msg);
-  });
-  this._decoder.on('end', function() {
-    _this.detach();
-    _this.emit('detach');
-  });
-}
-util.inherits(Session, EventEmitter);
-
-
-Session.prototype.attach = function(writer, reader) {
-  this._encoder.pipe(writer);
-  reader.pipe(this._decoder);
-  this._writer = writer;
-  this._reader = reader;
+    Response.prototype.send = function (resp, isError) {
+        if (this._sent)
+            throw new Error("Respnse to id " + this._request_id + " already sent.");
+        if (isError) {
+            this._encoder.write([1, this._request_id, resp, null]);
+        }
+        else {
+            this._encoder.write([1, this._request_id, null, resp]);
+        }
+        this._sent = true;
+    };
+    return Response;
+}());
+var MSGPACK_OPTS = {
+    header: false
 };
-
-
-Session.prototype.detach = function() {
-  this._encoder.unpipe(this._writer);
-  this._reader.unpipe(this._decoder);
-};
-
-
-Session.prototype.request = function(method, args, cb) {
-  var request_id = this._next_request_id++;
-  this._encoder.write([0, request_id, method, args]);
-  this._pending_requests[request_id] = cb;
-};
-
-
-Session.prototype.notify = function(method, args) {
-  this._encoder.write([2, method, args]);
-};
-
-
-Session.prototype._parse_message = function(msg) {
-  var msg_type = msg[0];
-
-  if (msg_type === 0) {
-    // request
-    //   - msg[1]: id
-    //   - msg[2]: method name
-    //   - msg[3]: arguments
-    this.emit('request', msg[2].toString(), msg[3],
-              new Response(this._encoder, msg[1]));
-  } else if (msg_type === 1) {
-    // response to a previous request:
-    //   - msg[1]: the id
-    //   - msg[2]: error(if any)
-    //   - msg[3]: result(if not errored)
-    var id = msg[1];
-    var handler = this._pending_requests[id];
-    delete this._pending_requests[id];
-    handler(msg[2], msg[3]);
-  } else if (msg_type === 2) {
-    // notification/event
-    //   - msg[1]: event name
-    //   - msg[2]: arguments
-    this.emit('notification', msg[1].toString(), msg[2]);
-  } else {
-    this._encoder.write([1, 0, 'Invalid message type', null]);
-  }
-};
-
+var Session = (function (_super) {
+    __extends(Session, _super);
+    function Session(types) {
+        if (types === void 0) { types = []; }
+        var _this = _super.call(this) || this;
+        _this._pending_requests = {};
+        _this._next_request_id = 1;
+        var msgpack = msgpack5(types);
+        for (var _i = 0, types_1 = types; _i < types_1.length; _i++) {
+            var type = types_1[_i];
+            msgpack.register(type.code, type.constructor, type.encode, type.decode);
+        }
+        _this._encoder = msgpack.encoder(MSGPACK_OPTS);
+        _this._decoder = msgpack.decoder(MSGPACK_OPTS);
+        _this._decoder.on('data', _this._parse_message.bind(_this));
+        _this._decoder.on('end', function () {
+            _this.detach();
+            _this.emit('detach');
+        });
+        return _this;
+    }
+    Session.prototype.attach = function (writer, reader) {
+        this._encoder.pipe(writer);
+        reader.pipe(this._decoder);
+        this._writer = writer;
+        this._reader = reader;
+    };
+    Session.prototype.detach = function () {
+        this._encoder.unpipe(this._writer);
+        this._reader.unpipe(this._decoder);
+    };
+    Session.prototype.request = function (method, args) {
+        var _this = this;
+        return new Promise(function (accept, reject) {
+            var request_id = _this._next_request_id++;
+            _this._pending_requests[request_id] = { accept: accept, reject: reject };
+            _this._encoder.write([0, request_id, method, args]);
+        });
+    };
+    Session.prototype.notify = function (method, args) {
+        this._encoder.write([2, method, args]);
+    };
+    Session.prototype._parse_message = function (_a) {
+        var msg_type = _a[0], msg_rest = _a.slice(1);
+        switch (msg_type) {
+            case 0: {
+                var id = msg_rest[0], method = msg_rest[1], args = msg_rest[2];
+                this.emit('request', method.toString(), args, new Response(this._encoder, id));
+                break;
+            }
+            case 1: {
+                var id = msg_rest[0], err = msg_rest[1], result = msg_rest[2];
+                var p = this._pending_requests[id];
+                delete this._pending_requests[id];
+                if (err)
+                    p.reject(err);
+                else
+                    p.accept(result);
+                break;
+            }
+            case 2: {
+                var event_name = msg_rest[0], args = msg_rest[1];
+                this.emit('notification', event_name.toString(), args);
+                break;
+            }
+            default:
+                this._encoder.write([1, 0, 'Invalid message type', null]);
+        }
+    };
+    return Session;
+}(events_1.EventEmitter));
 module.exports = Session;

@@ -1,0 +1,8 @@
+{
+  "name": "msgpack5rpc",
+  "dependencies": {},
+  "globalDependencies": {
+    "mocha": "registry:dt/mocha#2.2.5+20161221010438",
+    "node": "registry:dt/node#6.0.0+20170103182131"
+  }
+}

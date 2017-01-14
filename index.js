@@ -25,19 +25,16 @@ Response.prototype.send = function(resp, is_error) {
 
 function Session(types) {
   var _this = this;
-  var msgpack = msgpack5();
   var opts = {header: false};
 
-  if (types)
-    for (var i = 0, l = types.length; i < l; i++) {
-      var type = types[i];
-      msgpack.register(type.code, type.constructor, type.encode, type.decode);
-    }
+  this._msgpack = msgpack5();
+
+  this.addTypes(types)
 
   this._pending_requests = {};
   this._next_request_id = 1;
-  this._encoder = msgpack.encoder(opts);
-  this._decoder = msgpack.decoder(opts);
+  this._encoder = this._msgpack.encoder(opts);
+  this._decoder = this._msgpack.decoder(opts);
   this._decoder.on('data', function(msg) {
     _this._parse_message(msg);
   });
@@ -48,6 +45,14 @@ function Session(types) {
 }
 util.inherits(Session, EventEmitter);
 
+
+Session.prototype.addTypes = function(types) {
+  if (types)
+    for (var i = 0, l = types.length; i < l; i++) {
+      var type = types[i];
+      this._msgpack.register(type.code, type.constructor, type.encode, type.decode);
+    }
+}
 
 Session.prototype.attach = function(writer, reader) {
   this._encoder.pipe(writer);
